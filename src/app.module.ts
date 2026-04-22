@@ -12,7 +12,7 @@ import { RedisModule } from './redis/redis.module';
     RedisModule,
   ],
   controllers: [AppController],
-  providers: [],
+  providers: [AppService],
 })
 
 export class AppModule {}
