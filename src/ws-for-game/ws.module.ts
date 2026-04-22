@@ -4,6 +4,7 @@ import { JwtService } from "@nestjs/jwt";
 import { UserModule } from "../user/user.module";
 import { WsGateway } from "./ws.gateway";
 import { ClientsModule, Transport } from "@nestjs/microservices";
+import { GameConsumer } from "./game.controller";
 
 @Module({
     imports: [
@@ -20,7 +21,7 @@ import { ClientsModule, Transport } from "@nestjs/microservices";
         ]),
         UserModule,
     ],
-    controllers: [],
+    controllers: [GameConsumer],
     providers: [WsGateway, WsJwtGuard, JwtService],
     exports: [WsGateway]
 })
