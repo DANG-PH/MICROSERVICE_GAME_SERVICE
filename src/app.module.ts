@@ -4,9 +4,14 @@ import { AppService } from './app.service';
 import { UserModule } from './user/user.module';
 import { WsModule } from './ws-for-game/ws.module';
 import { RedisModule } from './redis/redis.module';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
   imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: '.env',
+    }),
     UserModule,
     WsModule,
     RedisModule,
@@ -14,5 +19,4 @@ import { RedisModule } from './redis/redis.module';
   controllers: [AppController],
   providers: [AppService],
 })
-
 export class AppModule {}
