@@ -981,6 +981,7 @@ export class WsGateway {
         cao: playerState.cao,
         gameName: playerState.gameName,
         avatar: playerState.avatar,
+        deoLungDung: playerState.deoLungDung ?? null,
       };
     }).filter(Boolean);
   }
