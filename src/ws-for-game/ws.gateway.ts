@@ -106,30 +106,31 @@ export class WsGateway {
       client.emit('mapSnapshot', players);
       await this.syncSkillsToClient(client, state.map);
 
-      client.to(`MAP:${state.map}`).emit('playerSpawn', {
-        userId,
-        x: state.x,
-        y: state.y,
-        trangthai: 'DUNG_YEN',
-        dir: 1,
-        dau: "nhanvat/traidat/avatar/Goku_base/daudung.png",
-        than: "nhanvat/traidat/do/set_base/thandung.png",
-        chan: "nhanvat/traidat/do/set_base/chandung.png",
-        timeChoHienBay: 0,
-        lechDauX: -0.3,
-        lechDauY: 15.5,
-        lechThanX: 0,
-        lechThanY: 0,
-        lechChanX: 0,
-        lechChanY: 0,
-        frameVanBay: 1,
-        dangMangVanBay: false,
-        tenVanBay: "base",
-        rong: 50,
-        cao: 50,
-        gameName: state.gameName,
-        avatar: "nhanvat/traidat/avatar/Goku_base/daudung.png",
-      });
+      // client.to(`MAP:${state.map}`).emit('playerSpawn', {
+      //   userId,
+      //   x: state.x,
+      //   y: state.y,
+      //   trangthai: 'DUNG_YEN',
+      //   dir: 1,
+      //   dau: "nhanvat/traidat/avatar/Goku_base/daudung.png",
+      //   than: "nhanvat/traidat/do/set_base/thandung.png",
+      //   chan: "nhanvat/traidat/do/set_base/chandung.png",
+      //   timeChoHienBay: 0,
+      //   lechDauX: -0.3,
+      //   lechDauY: 15.5,
+      //   lechThanX: 0,
+      //   lechThanY: 0,
+      //   lechChanX: 0,
+      //   lechChanY: 0,
+      //   frameVanBay: 1,
+      //   dangMangVanBay: false,
+      //   tenVanBay: "base",
+      //   rong: 50,
+      //   cao: 50,
+      //   gameName: state.gameName,
+      //   avatar: "nhanvat/traidat/avatar/Goku_base/daudung.png",
+      //   // deoLungDung: null, client tự biết null, k cần gửi
+      // });
 
       client.join(`Game:${payload.userId}`);
       client.join(`NotificationGame`);
@@ -244,6 +245,7 @@ export class WsGateway {
       cao: body.cao,
       gameName: state.gameName,
       avatar: body.avatar,
+      deoLungDung: state.deoLungDung ?? null,
     });
   }
 
