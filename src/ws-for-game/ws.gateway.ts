@@ -326,6 +326,19 @@ export class WsGateway {
     });
   }
 
+  /**
+   * [use-skill] Xử lý khi user dùng skill
+   *
+   * Cách 2 (KHÔNG dùng): Gắn vào GAME:PLAYER:${userId} như deo-lung
+   *   - HSET field không hỗ trợ TTL per-field → không thể tự expire từng skill
+   *   - Phải tự cleanup thủ công khi skill hết thời gian → phức tạp, dễ sót
+   *
+   * Cách 1 (ĐANG dùng): Tạo key riêng GAME:SKILL:${map}:${userId}:${skillId} với TTL
+   *   + Redis tự xóa key khi skill hết thời gian cast → không cần cleanup thủ công
+   *   + Sorted Set GAME:SKILL:MAP:${map} (score = expireAt) để syncSkillsToClient
+   *     lọc được skill còn hiệu lực khi B join map sau
+   *   + Hỗ trợ multi-skill cùng lúc, mỗi skill có TTL độc lập
+   */
   @SubscribeMessage('use-skill')
   async handleUseSkill(
     @ConnectedSocket() client: Socket,
@@ -376,6 +389,79 @@ export class WsGateway {
       userId,
       skillId: body.skillId
     });
+  }
+
+  /**
+   * [use-deo-lung] Xử lý khi user đeo item lưng
+   *
+   * Cách 1 (KHÔNG dùng): Tạo key Redis riêng GAME:DEO_LUNG:${map}:${userId}
+   *   + Cần syncDeoLungToClient riêng khi B join map
+   *   - N user đeo mãi = N key tồn tại vô thời hạn → memory leak
+   *   - Phải cleanup thủ công trong handleDisconnect và handleSetMap
+   *
+   * Cách 2 (ĐANG dùng): Gắn deoLungDung thẳng vào GAME:PLAYER:${userId}
+   *   + mapSnapshot đã trả về toàn bộ player state → B join sau tự thấy luôn, không cần sync riêng
+   *   + Không tạo thêm key Redis nào → không bao giờ leak
+   *   + Tự cleanup khi player disconnect vì GAME:PLAYER key đã được xóa rồi
+   */
+  @SubscribeMessage('use-deo-lung')
+  async handleUseDeoLung(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { deoLungDung: string }
+  ) {
+    const { userId } = client.data.user;
+    const map = client.data.map;
+
+    await this.redis.hset(`GAME:PLAYER:${userId}`, {
+      deoLungDung: body.deoLungDung,
+    });
+
+    this.server.to(`MAP:${map}`).emit('useDeoLung', {
+      userId,
+      deoLungDung: body.deoLungDung,
+    });
+  }
+
+  /**
+   * [cancel-deo-lung] Xử lý khi user bỏ item lưng
+   *
+   * Cách 1 (KHÔNG dùng): Xóa key GAME:DEO_LUNG:${map}:${userId} + srem khỏi Set
+   *   - Phải nhớ cleanup đúng cả 2 chỗ (key + set), dễ miss → data stale
+   *
+   * Cách 2 (ĐANG dùng): hdel field deoLungDung trong GAME:PLAYER:${userId}
+   *   + Chỉ một thao tác duy nhất, không có gì bị sót
+   *   + Nhất quán với cách lưu ở use-deo-lung
+   */
+  @SubscribeMessage('cancel-deo-lung')
+  async handleCancelDeoLung(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: {}
+  ) {
+    const { userId } = client.data.user;
+    const map = client.data.map;
+
+    await this.redis.hdel(`GAME:PLAYER:${userId}`, 'deoLungDung');
+
+    this.server.to(`MAP:${map}`).emit('cancelDeoLung', { userId });
+  }
+
+  @SubscribeMessage('sync-my-state')
+  async handleSyncMyState(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { deoLungDung: string | null }
+  ) {
+    const { userId } = client.data.user;
+    const map = client.data.map;
+
+    if (body.deoLungDung) {
+      await this.redis.hset(`GAME:PLAYER:${userId}`, { deoLungDung: body.deoLungDung });
+      // Broadcast lại cho cả map vì A, C, D đang thấy state cũ
+      this.server.to(`MAP:${map}`).emit('useDeoLung', { userId, deoLungDung: body.deoLungDung });
+    } else {
+      await this.redis.hdel(`GAME:PLAYER:${userId}`, 'deoLungDung');
+      // B đã tháo trong lúc mất mạng → báo cho map
+      this.server.to(`MAP:${map}`).emit('cancelDeoLung', { userId });
+    }
   }
 
   @SubscribeMessage('player-chat')
