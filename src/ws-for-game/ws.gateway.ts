@@ -106,31 +106,35 @@ export class WsGateway {
       client.emit('mapSnapshot', players);
       await this.syncSkillsToClient(client, state.map);
 
-      // client.to(`MAP:${state.map}`).emit('playerSpawn', {
-      //   userId,
-      //   x: state.x,
-      //   y: state.y,
-      //   trangthai: 'DUNG_YEN',
-      //   dir: 1,
-      //   dau: "nhanvat/traidat/avatar/Goku_base/daudung.png",
-      //   than: "nhanvat/traidat/do/set_base/thandung.png",
-      //   chan: "nhanvat/traidat/do/set_base/chandung.png",
-      //   timeChoHienBay: 0,
-      //   lechDauX: -0.3,
-      //   lechDauY: 15.5,
-      //   lechThanX: 0,
-      //   lechThanY: 0,
-      //   lechChanX: 0,
-      //   lechChanY: 0,
-      //   frameVanBay: 1,
-      //   dangMangVanBay: false,
-      //   tenVanBay: "base",
-      //   rong: 50,
-      //   cao: 50,
-      //   gameName: state.gameName,
-      //   avatar: "nhanvat/traidat/avatar/Goku_base/daudung.png",
-      //   // deoLungDung: null, client tự biết null, k cần gửi
-      // });
+      client.to(`MAP:${state.map}`).emit('playerSpawn', {
+        userId,
+        x: state.x,
+        y: state.y,
+        trangthai: 'DUNG_YEN',
+        dir: 1,
+        dau: "",
+        than: "",
+        chan: "", // Gửi rỗng để tạm thời k render ra ảnh, 
+                  // trước để ảnh base render ra khá xấu và k đúng ảnh hiện tại của user
+                  // Vậy tại sao k comment cả emit này mà vẫn gửi nhưng gửi rỗng?
+                  // Vì gửi để người chơi khác còn put vào ArrayList playerState của họ, và lúc đó người chơi gửi sync lúc vừa vào game (do lastsentX đang -9999 nên mới vào game sẽ gửi sync 1 lần, lúc này đúng quần áo, trạng thái,...)
+                  // Còn nếu k gửi thì khi người chơi gửi sync (vẫn gửi do lastsent = -9999) nhưng người chơi khác sẽ k chấp nhận vì nếu k emit ở đây thì sẽ chưa được push vào list playerState của người chơi khác dẫn đến bị reject
+        timeChoHienBay: 0,
+        lechDauX: -0.3,
+        lechDauY: 15.5,
+        lechThanX: 0,
+        lechThanY: 0,
+        lechChanX: 0,
+        lechChanY: 0,
+        frameVanBay: 1,
+        dangMangVanBay: false,
+        tenVanBay: "base",
+        rong: 50,
+        cao: 50,
+        gameName: state.gameName,
+        avatar: "nhanvat/traidat/avatar/Goku_base/daudung.png",
+        // deoLungDung: null, client tự biết null, k cần gửi
+      });
 
       client.join(`Game:${payload.userId}`);
       client.join(`NotificationGame`);
