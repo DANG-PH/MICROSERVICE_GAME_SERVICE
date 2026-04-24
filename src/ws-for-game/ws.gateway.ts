@@ -20,6 +20,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ClientProxy } from '@nestjs/microservices';
 import { LoaiNapTien } from 'src/enums/nap.enum';
 import type { NapTienEvent } from 'src/interface/nap.interface';
+import { ALLOWED_COSMETIC_FIELDS, CosmeticField } from 'src/enums/cosmetic.enum';
 
 @UseGuards(WsJwtGuard)
 @WebSocketGateway({
@@ -94,7 +95,6 @@ export class WsGateway {
         cao: 50,
         gameName: state.gameName,
         avatar: "nhanvat/traidat/avatar/Goku_base/daudung.png",
-        // deoLungDung: null, client tự biết null, k cần gửi
       });
 
       await this.redis.sadd(`GAME:MAP:${state.map}`, userId);
@@ -215,6 +215,8 @@ export class WsGateway {
       gameName: state.gameName,
       avatar: body.avatar,
       deoLungDung: state.deoLungDung ?? null,
+      huyHieuDung: state.huyHieuDung ?? null,
+      auraDung: state.auraDung ?? null,
     });
 
     await this.redis.sadd(`GAME:MAP:${body.map}`, userId);
@@ -250,6 +252,8 @@ export class WsGateway {
       gameName: state.gameName,
       avatar: body.avatar,
       deoLungDung: state.deoLungDung ?? null,
+      huyHieuDung: state.huyHieuDung ?? null,
+      auraDung: state.auraDung ?? null,
     });
   }
 
@@ -407,26 +411,27 @@ export class WsGateway {
    *   - N user đeo mãi = N key tồn tại vô thời hạn → memory leak
    *   - Phải cleanup thủ công trong handleDisconnect và handleSetMap
    *
-   * Cách 2 (ĐANG dùng): Gắn deoLungDung thẳng vào GAME:PLAYER:${userId}
+   * Cách 2 (ĐANG dùng): Gắn cosmetic thẳng vào GAME:PLAYER:${userId}
    *   + mapSnapshot đã trả về toàn bộ player state → B join sau tự thấy luôn, không cần sync riêng
    *   + Không tạo thêm key Redis nào → không bao giờ leak
    *   + Tự cleanup khi player disconnect vì GAME:PLAYER key đã được xóa rồi
    */
-  @SubscribeMessage('use-deo-lung')
-  async handleUseDeoLung(
+  @SubscribeMessage('use-cosmetic')
+  async handleUseCosmetic(
     @ConnectedSocket() client: Socket,
-    @MessageBody() body: { deoLungDung: string }
+    @MessageBody() body: { field: CosmeticField; value: string }
   ) {
+    if (!ALLOWED_COSMETIC_FIELDS.includes(body.field)) return;
+
     const { userId } = client.data.user;
     const map = client.data.map;
 
-    await this.redis.hset(`GAME:PLAYER:${userId}`, {
-      deoLungDung: body.deoLungDung,
-    });
+    await this.redis.hset(`GAME:PLAYER:${userId}`, { [body.field]: body.value });
 
-    this.server.to(`MAP:${map}`).emit('useDeoLung', {
+    this.server.to(`MAP:${map}`).emit('useCosmetic', {
       userId,
-      deoLungDung: body.deoLungDung,
+      field: body.field,
+      value: body.value,
     });
   }
 
@@ -436,42 +441,48 @@ export class WsGateway {
    * Cách 1 (KHÔNG dùng): Xóa key GAME:DEO_LUNG:${map}:${userId} + srem khỏi Set
    *   - Phải nhớ cleanup đúng cả 2 chỗ (key + set), dễ miss → data stale
    *
-   * Cách 2 (ĐANG dùng): hdel field deoLungDung trong GAME:PLAYER:${userId}
+   * Cách 2 (ĐANG dùng): hdel field cosmetic trong GAME:PLAYER:${userId}
    *   + Chỉ một thao tác duy nhất, không có gì bị sót
-   *   + Nhất quán với cách lưu ở use-deo-lung
+   *   + Nhất quán với cách lưu ở use-cosmetic
    */
-  @SubscribeMessage('cancel-deo-lung')
-  async handleCancelDeoLung(
+  @SubscribeMessage('cancel-cosmetic')
+  async handleCancelCosmetic(
     @ConnectedSocket() client: Socket,
-    @MessageBody() body: {}
+    @MessageBody() body: { field: CosmeticField }
   ) {
+    if (!ALLOWED_COSMETIC_FIELDS.includes(body.field)) return;
+
     const { userId } = client.data.user;
     const map = client.data.map;
 
-    await this.redis.hdel(`GAME:PLAYER:${userId}`, 'deoLungDung');
+    await this.redis.hdel(`GAME:PLAYER:${userId}`, body.field);
 
-    this.server.to(`MAP:${map}`).emit('cancelDeoLung', { userId });
+    this.server.to(`MAP:${map}`).emit('cancelCosmetic', { userId, field: body.field });
   }
 
   @SubscribeMessage('sync-my-state')
   async handleSyncMyState(
     @ConnectedSocket() client: Socket,
-    @MessageBody() body: { deoLungDung: string | null }
+    @MessageBody() body: Partial<Record<CosmeticField, string | null>>
   ) {
     const { userId } = client.data.user;
     const map = client.data.map;
 
-    if (body.deoLungDung) {
-      await this.redis.hset(`GAME:PLAYER:${userId}`, { deoLungDung: body.deoLungDung });
-      // Broadcast lại cho cả map vì A, C, D đang thấy state cũ
-      this.server.to(`MAP:${map}`).emit('useDeoLung', { userId, deoLungDung: body.deoLungDung });
-    } else {
-      await this.redis.hdel(`GAME:PLAYER:${userId}`, 'deoLungDung');
-      // B đã tháo trong lúc mất mạng → báo cho map
-      this.server.to(`MAP:${map}`).emit('cancelDeoLung', { userId });
+    for (const field of ALLOWED_COSMETIC_FIELDS) {
+      if (!(field in body)) continue;
+
+      const value = body[field];
+
+      if (value) {
+        await this.redis.hset(`GAME:PLAYER:${userId}`, { [field]: value });
+        this.server.to(`MAP:${map}`).emit('useCosmetic', { userId, field, value });
+      } else {
+        await this.redis.hdel(`GAME:PLAYER:${userId}`, field);
+        this.server.to(`MAP:${map}`).emit('cancelCosmetic', { userId, field });
+      }
     }
   }
-
+  
   @SubscribeMessage('player-chat')
   async handleChat(
     @ConnectedSocket() client: Socket,
@@ -990,6 +1001,8 @@ export class WsGateway {
         gameName: playerState.gameName,
         avatar: playerState.avatar,
         deoLungDung: playerState.deoLungDung ?? null,
+        huyHieuDung: playerState.huyHieuDung ?? null,
+        auraDung: playerState.auraDung ?? null,
       };
     }).filter(Boolean);
   }
