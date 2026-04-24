@@ -463,7 +463,7 @@ export class WsGateway {
   @SubscribeMessage('sync-my-state')
   async handleSyncMyState(
     @ConnectedSocket() client: Socket,
-    @MessageBody() body: Partial<Record<CosmeticField, string | null>>
+    @MessageBody() body: Partial<Record<CosmeticField, string | null>> // Partial biến data thành optional
   ) {
     const { userId } = client.data.user;
     const map = client.data.map;
@@ -482,7 +482,7 @@ export class WsGateway {
       }
     }
   }
-  
+
   @SubscribeMessage('player-chat')
   async handleChat(
     @ConnectedSocket() client: Socket,
