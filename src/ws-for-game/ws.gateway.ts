@@ -620,13 +620,13 @@ export class WsGateway {
 
     const raw = await this.redis.get(this.RONG_THAN_KEY);
     if (!raw) {
-      client.emit('uocXongResult', { success: false, message: 'Không có rồng thần nào đang được triệu hồi' });
+      client.emit(`Game:${userId}`, { success: false, message: 'Không có rồng thần nào đang được triệu hồi' });
       return;
     }
 
     const { userId: ownerUserId, mapRedis } = JSON.parse(raw);
     if (String(ownerUserId) !== String(userId)) {
-      client.emit('uocXongResult', { success: false, message: 'Bạn không phải người triệu hồi rồng thần' });
+      client.emit(`Game:${userId}`, { success: false, message: 'Bạn không phải người triệu hồi rồng thần' });
       return;
     }
 
