@@ -1000,9 +1000,9 @@ export class WsGateway {
         cao: playerState.cao,
         gameName: playerState.gameName,
         avatar: playerState.avatar,
-        deoLungDung: playerState.deoLungDung ?? null,
-        huyHieuDung: playerState.huyHieuDung ?? null,
-        auraDung: playerState.auraDung ?? null,
+        deoLungDung: playerState.deoLungDung ?? "",
+        huyHieuDung: playerState.huyHieuDung ?? "",
+        auraDung: playerState.auraDung ?? "",
       };
     }).filter(Boolean);
   }
