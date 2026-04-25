@@ -606,6 +606,7 @@ export class WsGateway {
     this.server.to(`MAP:${map}`).emit('uocRongThan', {
       mapToi: true,
       nguoiUoc: userId,
+      map: map, // Gửi thêm map để tránh user đã chuyển map mới khi gói tin chưa kịp tới
     });
   }
 
@@ -623,7 +624,7 @@ export class WsGateway {
       return;
     }
 
-    const { userId: ownerUserId } = JSON.parse(raw);
+    const { userId: ownerUserId, mapRedis } = JSON.parse(raw);
     if (String(ownerUserId) !== String(userId)) {
       client.emit('uocXongResult', { success: false, message: 'Bạn không phải người triệu hồi rồng thần' });
       return;
@@ -634,6 +635,7 @@ export class WsGateway {
     this.server.to(`MAP:${map}`).emit('uocRongThan', {
       mapToi: false,
       nguoiUoc: userId,
+      map: mapRedis,
     });
   }
 
@@ -661,7 +663,7 @@ export class WsGateway {
         const snapshot = await this.redis.get(this.RONG_THAN_SNAPSHOT_KEY);
         if (snapshot) {
           const { map } = JSON.parse(snapshot);
-          this.server.to(`MAP:${map}`).emit('uocRongThan', { mapToi: false, nguoiUoc: null });
+          this.server.to(`MAP:${map}`).emit('uocRongThan', { mapToi: false, nguoiUoc: null, map: map });
           await this.redis.del(this.RONG_THAN_SNAPSHOT_KEY);
         }
       }
