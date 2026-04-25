@@ -115,7 +115,14 @@ export class WsGateway {
       if (rongThanRaw) {
         const { userId: ownerUserId, map: rongMap } = JSON.parse(rongThanRaw);
         if (rongMap === state.map) {
-          client.emit('uocRongThan', { mapToi: true, nguoiUoc: ownerUserId });
+          const ownerPlayer = players.find(p => p.userId == ownerUserId); 
+          client.emit('uocRongThan', { 
+            mapToi: true, 
+            nguoiUoc: ownerUserId, 
+            map: state.map, 
+            x: ownerPlayer.x,
+            y: ownerPlayer.y,
+          });
         }
       }
 
@@ -244,7 +251,14 @@ export class WsGateway {
     if (rongThanRaw) {
       const { userId: ownerUserId, map: rongMap } = JSON.parse(rongThanRaw);
       if (rongMap === body.map) {
-        client.emit('uocRongThan', { mapToi: true, nguoiUoc: ownerUserId });
+        const ownerPlayer = players.find(p => p.userId == ownerUserId); 
+        client.emit('uocRongThan', { 
+          mapToi: true, 
+          nguoiUoc: ownerUserId, 
+          map: state.map, 
+          x: ownerPlayer.x,
+          y: ownerPlayer.y,
+        });
       }
     }
 
@@ -603,10 +617,15 @@ export class WsGateway {
       message: 'OK',
     });
 
+    // Lấy tọa độ người ước từ Redis
+    const playerState = await this.redis.hgetall(`GAME:PLAYER:${userId}`);
+
     this.server.to(`MAP:${map}`).emit('uocRongThan', {
       mapToi: true,
       nguoiUoc: userId,
       map: map, // Gửi thêm map để tránh user đã chuyển map mới khi gói tin chưa kịp tới
+      x: Number(playerState.x),
+      y: Number(playerState.y),
     });
   }
 
@@ -636,6 +655,8 @@ export class WsGateway {
       mapToi: false,
       nguoiUoc: userId,
       map: mapRedis,
+      x: 0,
+      y: 0,
     });
   }
 
@@ -663,7 +684,7 @@ export class WsGateway {
         const snapshot = await this.redis.get(this.RONG_THAN_SNAPSHOT_KEY);
         if (snapshot) {
           const { map } = JSON.parse(snapshot);
-          this.server.to(`MAP:${map}`).emit('uocRongThan', { mapToi: false, nguoiUoc: null, map: map });
+          this.server.to(`MAP:${map}`).emit('uocRongThan', { mapToi: false, nguoiUoc: null, map: map, x: 0, y: 0 });
           await this.redis.del(this.RONG_THAN_SNAPSHOT_KEY);
         }
       }
