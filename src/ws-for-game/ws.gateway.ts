@@ -119,12 +119,22 @@ export class WsGateway {
           client.emit('uocRongThan', { 
             mapToi: true, 
             nguoiUoc: ownerUserId, 
-            map: state.map, 
+            map: rongMap, 
             x: ownerPlayer.x,
             y: ownerPlayer.y,
             ngocRongUoc: ngocRongUoc,
           });
         }
+      } else {
+        // Key không còn -> reset state client phòng trường hợp client còn state cũ
+        client.emit('uocRongThan', {
+          mapToi: false,
+          nguoiUoc: null,
+          map: state.map,
+          x: 0,
+          y: 0,
+          ngocRongUoc: "",
+        });
       }
 
       client.to(`MAP:${state.map}`).emit('playerSpawn', {
@@ -256,12 +266,22 @@ export class WsGateway {
         client.emit('uocRongThan', { 
           mapToi: true, 
           nguoiUoc: ownerUserId, 
-          map: state.map, 
+          map: rongMap, 
           x: ownerPlayer.x,
           y: ownerPlayer.y,
           ngocRongUoc: ngocRongUoc,
         });
       }
+    } else {
+      // Key không còn -> reset state client phòng trường hợp client còn state cũ
+      client.emit('uocRongThan', {
+        mapToi: false,
+        nguoiUoc: null,
+        map: body.map,
+        x: 0,
+        y: 0,
+        ngocRongUoc: "",
+      });
     }
 
     client.to(`MAP:${body.map}`).emit('playerSpawn', {
