@@ -113,7 +113,7 @@ export class WsGateway {
       await this.syncSkillsToClient(client, state.map);
       const rongThanRaw = await this.redis.get(this.RONG_THAN_KEY);
       if (rongThanRaw) {
-        const { userId: ownerUserId, map: rongMap } = JSON.parse(rongThanRaw);
+        const { userId: ownerUserId, map: rongMap, ngocRongUoc } = JSON.parse(rongThanRaw);
         if (rongMap === state.map) {
           const ownerPlayer = players.find(p => p.userId == ownerUserId); 
           client.emit('uocRongThan', { 
@@ -122,6 +122,7 @@ export class WsGateway {
             map: state.map, 
             x: ownerPlayer.x,
             y: ownerPlayer.y,
+            ngocRongUoc: ngocRongUoc,
           });
         }
       }
@@ -249,7 +250,7 @@ export class WsGateway {
     await this.syncSkillsToClient(client, body.map);
     const rongThanRaw = await this.redis.get(this.RONG_THAN_KEY);
     if (rongThanRaw) {
-      const { userId: ownerUserId, map: rongMap } = JSON.parse(rongThanRaw);
+      const { userId: ownerUserId, map: rongMap, ngocRongUoc } = JSON.parse(rongThanRaw);
       if (rongMap === body.map) {
         const ownerPlayer = players.find(p => p.userId == ownerUserId); 
         client.emit('uocRongThan', { 
@@ -258,6 +259,7 @@ export class WsGateway {
           map: state.map, 
           x: ownerPlayer.x,
           y: ownerPlayer.y,
+          ngocRongUoc: ngocRongUoc,
         });
       }
     }
@@ -573,7 +575,7 @@ export class WsGateway {
   @SubscribeMessage('uoc-rong-than')
   async handleUocRongThan(
     @ConnectedSocket() client: Socket,
-    @MessageBody() body: {}
+    @MessageBody() body: { ngocRongUoc: string }
   ) {
     const { userId } = client.data.user;
     const map = client.data.map;
@@ -593,7 +595,7 @@ export class WsGateway {
       return {'OK', '0'}
     `;
 
-    const value = JSON.stringify({ userId, map });
+    const value = JSON.stringify({ userId, map, ngocRongUoc: body.ngocRongUoc });
 
     const [status, remain] = await this.redis.eval(
       UOC_RONG_THAN_SCRIPT,
@@ -626,6 +628,7 @@ export class WsGateway {
       map: map, // Gửi thêm map để tránh user đã chuyển map mới khi gói tin chưa kịp tới
       x: Number(playerState.x),
       y: Number(playerState.y),
+      ngocRongUoc: body.ngocRongUoc,
     });
   }
 
@@ -657,6 +660,7 @@ export class WsGateway {
       map: mapRedis,
       x: 0,
       y: 0,
+      ngocRongUoc: "",
     });
   }
 
@@ -684,7 +688,7 @@ export class WsGateway {
         const snapshot = await this.redis.get(this.RONG_THAN_SNAPSHOT_KEY);
         if (snapshot) {
           const { map } = JSON.parse(snapshot);
-          this.server.to(`MAP:${map}`).emit('uocRongThan', { mapToi: false, nguoiUoc: null, map: map, x: 0, y: 0 });
+          this.server.to(`MAP:${map}`).emit('uocRongThan', { mapToi: false, nguoiUoc: null, map: map, x: 0, y: 0, ngocRongUoc: "" });
           await this.redis.del(this.RONG_THAN_SNAPSHOT_KEY);
         }
       }
