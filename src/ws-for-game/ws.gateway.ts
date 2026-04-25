@@ -113,15 +113,14 @@ export class WsGateway {
       await this.syncSkillsToClient(client, state.map);
       const rongThanRaw = await this.redis.get(this.RONG_THAN_KEY);
       if (rongThanRaw) {
-        const { userId: ownerUserId, map: rongMap, ngocRongUoc } = JSON.parse(rongThanRaw);
+        const { userId: ownerUserId, map: rongMap, ngocRongUoc, x, y } = JSON.parse(rongThanRaw);
         if (rongMap === state.map) {
-          const ownerPlayer = players.find(p => p.userId == ownerUserId); 
           client.emit('uocRongThan', { 
             mapToi: true, 
             nguoiUoc: ownerUserId, 
             map: rongMap, 
-            x: ownerPlayer.x,
-            y: ownerPlayer.y,
+            x: x,
+            y: y,
             ngocRongUoc: ngocRongUoc,
           });
         }
@@ -260,15 +259,15 @@ export class WsGateway {
     await this.syncSkillsToClient(client, body.map);
     const rongThanRaw = await this.redis.get(this.RONG_THAN_KEY);
     if (rongThanRaw) {
-      const { userId: ownerUserId, map: rongMap, ngocRongUoc } = JSON.parse(rongThanRaw);
+      const { userId: ownerUserId, map: rongMap, ngocRongUoc, x, y } = JSON.parse(rongThanRaw);
       if (rongMap === body.map) {
         const ownerPlayer = players.find(p => p.userId == ownerUserId); 
         client.emit('uocRongThan', { 
           mapToi: true, 
           nguoiUoc: ownerUserId, 
           map: rongMap, 
-          x: ownerPlayer.x,
-          y: ownerPlayer.y,
+          x: x,
+          y: y,
           ngocRongUoc: ngocRongUoc,
         });
       }
@@ -601,6 +600,9 @@ export class WsGateway {
     const { userId } = client.data.user;
     const map = client.data.map;
 
+    // Lấy tọa độ người ước từ Redis
+    const playerState = await this.redis.hgetall(`GAME:PLAYER:${userId}`);
+
     const UOC_RONG_THAN_SCRIPT = `
       local key    = KEYS[1]
       local value  = ARGV[1]
@@ -616,7 +618,13 @@ export class WsGateway {
       return {'OK', '0'}
     `;
 
-    const value = JSON.stringify({ userId, map, ngocRongUoc: body.ngocRongUoc });
+    const value = JSON.stringify({ 
+      userId, 
+      map, 
+      ngocRongUoc: body.ngocRongUoc,
+      x: Number(playerState.x),
+      y: Number(playerState.y),
+    });
 
     const [status, remain] = await this.redis.eval(
       UOC_RONG_THAN_SCRIPT,
@@ -639,9 +647,6 @@ export class WsGateway {
       duocGoiRong: true,
       message: 'OK',
     });
-
-    // Lấy tọa độ người ước từ Redis
-    const playerState = await this.redis.hgetall(`GAME:PLAYER:${userId}`);
 
     this.server.to(`MAP:${map}`).emit('uocRongThan', {
       mapToi: true,
