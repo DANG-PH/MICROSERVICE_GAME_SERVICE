@@ -113,11 +113,12 @@ export class WsGateway {
       await this.syncSkillsToClient(client, state.map);
       const rongThanRaw = await this.redis.get(this.RONG_THAN_KEY);
       if (rongThanRaw) {
-        const { userId: ownerUserId, map: rongMap, ngocRongUoc, x, y } = JSON.parse(rongThanRaw);
+        const { userId: ownerUserId, map: rongMap, ngocRongUoc, x, y, gameName } = JSON.parse(rongThanRaw);
         if (rongMap === state.map) {
           client.emit('uocRongThan', { 
             mapToi: true, 
             nguoiUoc: ownerUserId, 
+            gameNameNguoiUoc: gameName,
             map: rongMap, 
             x: x,
             y: y,
@@ -129,6 +130,7 @@ export class WsGateway {
         client.emit('uocRongThan', {
           mapToi: false,
           nguoiUoc: null,
+          gameNameNguoiUoc: null,
           map: state.map,
           x: 0,
           y: 0,
@@ -259,12 +261,13 @@ export class WsGateway {
     await this.syncSkillsToClient(client, body.map);
     const rongThanRaw = await this.redis.get(this.RONG_THAN_KEY);
     if (rongThanRaw) {
-      const { userId: ownerUserId, map: rongMap, ngocRongUoc, x, y } = JSON.parse(rongThanRaw);
+      const { userId: ownerUserId, map: rongMap, ngocRongUoc, x, y, gameName } = JSON.parse(rongThanRaw);
       if (rongMap === body.map) {
         const ownerPlayer = players.find(p => p.userId == ownerUserId); 
         client.emit('uocRongThan', { 
           mapToi: true, 
           nguoiUoc: ownerUserId, 
+          gameNameNguoiUoc: gameName,
           map: rongMap, 
           x: x,
           y: y,
@@ -276,6 +279,7 @@ export class WsGateway {
       client.emit('uocRongThan', {
         mapToi: false,
         nguoiUoc: null,
+        gameNameNguoiUoc: null,
         map: body.map,
         x: 0,
         y: 0,
@@ -624,6 +628,7 @@ export class WsGateway {
       ngocRongUoc: body.ngocRongUoc,
       x: Number(playerState.x),
       y: Number(playerState.y),
+      gameName: playerState.gameName,
     });
 
     const [status, remain] = await this.redis.eval(
@@ -651,6 +656,7 @@ export class WsGateway {
     this.server.to(`MAP:${map}`).emit('uocRongThan', {
       mapToi: true,
       nguoiUoc: userId,
+      gameNameNguoiUoc: playerState.gameName,
       map: map, // Gửi thêm map để tránh user đã chuyển map mới khi gói tin chưa kịp tới
       x: Number(playerState.x),
       y: Number(playerState.y),
@@ -672,6 +678,7 @@ export class WsGateway {
       this.server.to(`MAP:${map}`).emit('uocRongThan', {
         mapToi: false,
         nguoiUoc: userId,
+        gameNameNguoiUoc: null,
         map: map,
         x: 0,
         y: 0,
@@ -693,6 +700,7 @@ export class WsGateway {
     this.server.to(`MAP:${map}`).emit('uocRongThan', {
       mapToi: false,
       nguoiUoc: userId,
+      gameNameNguoiUoc: null,
       map: mapRedis,
       x: 0,
       y: 0,
@@ -724,7 +732,7 @@ export class WsGateway {
         const snapshot = await this.redis.get(this.RONG_THAN_SNAPSHOT_KEY);
         if (snapshot) {
           const { map } = JSON.parse(snapshot);
-          this.server.to(`MAP:${map}`).emit('uocRongThan', { mapToi: false, nguoiUoc: null, map: map, x: 0, y: 0, ngocRongUoc: "" });
+          this.server.to(`MAP:${map}`).emit('uocRongThan', { mapToi: false, nguoiUoc: null,gameNameNguoiUoc: null, map: map, x: 0, y: 0, ngocRongUoc: "" });
           await this.redis.del(this.RONG_THAN_SNAPSHOT_KEY);
         }
       }
