@@ -635,8 +635,6 @@ export class WsGateway {
       mapToi: false,
       nguoiUoc: userId,
     });
-
-    client.emit('uocXongResult', { success: true });
   }
 
   private readonly RONG_THAN_SNAPSHOT_KEY = 'GAME:RONG_THAN:SNAPSHOT';
