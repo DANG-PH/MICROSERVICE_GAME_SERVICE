@@ -570,8 +570,8 @@ export class WsGateway {
   }
 
   private readonly RONG_THAN_KEY = 'GAME:RONG_THAN:ACTIVE'; // value: JSON {userId, map}
-  // private readonly TIME_DELAY_UOC_RONG = 10 * 60; // 10 phút 
-  private readonly TIME_DELAY_UOC_RONG = 10 ; // 10s
+  private readonly TIME_DELAY_UOC_RONG = 10 * 60; // 10 phút 
+  // private readonly TIME_DELAY_UOC_RONG = 10 ; // 10s
 
   @SubscribeMessage('uoc-rong-than')
   async handleUocRongThan(
