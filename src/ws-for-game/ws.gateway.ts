@@ -21,6 +21,8 @@ import { ClientProxy } from '@nestjs/microservices';
 import { LoaiNapTien } from 'src/enums/nap.enum';
 import type { NapTienEvent } from 'src/interface/nap.interface';
 import { ALLOWED_COSMETIC_FIELDS, CosmeticField } from 'src/enums/cosmetic.enum';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import Redlock, { ResourceLockedError, ExecutionError, Lock as RLock } from 'redlock';
 
 @UseGuards(WsJwtGuard)
 @WebSocketGateway({
@@ -31,6 +33,7 @@ import { ALLOWED_COSMETIC_FIELDS, CosmeticField } from 'src/enums/cosmetic.enum'
 export class WsGateway {
   @WebSocketServer()
   server: Server;
+  private redlock: Redlock;
 
   constructor(
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
@@ -38,7 +41,10 @@ export class WsGateway {
     private readonly userService: UserService,
     @Inject(String(process.env.RABBIT_SERVICE)) private readonly queueClient: ClientProxy,
     @Inject('REDIS_CLIENT') private readonly redis: Redis,
-  ) {}
+  ) {
+    this.redlock = new Redlock([this.redis], { retryCount: 0 }); // 1 node redis
+    // retryCount: 0 nghĩa là thử acquire lock đúng 1 lần, nếu thất bại thì throw ngay, không retry.
+  }
 
   async handleConnection(client: Socket) {
     try {
@@ -105,6 +111,13 @@ export class WsGateway {
       const players = await this.getPlayersInMap(state.map);
       client.emit('mapSnapshot', players);
       await this.syncSkillsToClient(client, state.map);
+      const rongThanRaw = await this.redis.get(this.RONG_THAN_KEY);
+      if (rongThanRaw) {
+        const { userId: ownerUserId, map: rongMap } = JSON.parse(rongThanRaw);
+        if (rongMap === state.map) {
+          client.emit('uocRongThan', { mapToi: true, nguoiUoc: ownerUserId });
+        }
+      }
 
       client.to(`MAP:${state.map}`).emit('playerSpawn', {
         userId,
@@ -227,6 +240,13 @@ export class WsGateway {
     const players = await this.getPlayersInMap(body.map);
     client.emit('mapSnapshot', players);
     await this.syncSkillsToClient(client, body.map);
+    const rongThanRaw = await this.redis.get(this.RONG_THAN_KEY);
+    if (rongThanRaw) {
+      const { userId: ownerUserId, map: rongMap } = JSON.parse(rongThanRaw);
+      if (rongMap === body.map) {
+        client.emit('uocRongThan', { mapToi: true, nguoiUoc: ownerUserId });
+      }
+    }
 
     client.to(`MAP:${body.map}`).emit('playerSpawn', {
       userId,
@@ -531,6 +551,133 @@ export class WsGateway {
   ) {
     // Room to, gui all User dang online
     client.to(`NotificationGame`).emit('notification', { tinNhan: body.tinNhan });
+  }
+
+  private readonly RONG_THAN_KEY = 'GAME:RONG_THAN:ACTIVE'; // value: JSON {userId, map}
+  private readonly TIME_DELAY_UOC_RONG = 10 * 60; // 10 phút 
+
+  @SubscribeMessage('uoc-rong-than')
+  async handleUocRongThan(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: {}
+  ) {
+    const { userId } = client.data.user;
+    const map = client.data.map;
+
+    const UOC_RONG_THAN_SCRIPT = `
+      local key    = KEYS[1]
+      local value  = ARGV[1]
+      local ttl    = tonumber(ARGV[2])
+
+      local existing = redis.call('GET', key)
+      if existing then
+        local remain = redis.call('TTL', key)
+        return {'COOLDOWN', tostring(remain)}
+      end
+
+      redis.call('SET', key, value, 'EX', ttl)
+      return {'OK', '0'}
+    `;
+
+    const value = JSON.stringify({ userId, map });
+
+    const [status, remain] = await this.redis.eval(
+      UOC_RONG_THAN_SCRIPT,
+      1,
+      this.RONG_THAN_KEY,
+      value,
+      String(this.TIME_DELAY_UOC_RONG),
+    ) as [string, string];
+
+    if (status === 'COOLDOWN') {
+      const minutesLeft = Math.ceil(Number(remain) / 60);
+      client.emit('uocRongThanResult', {
+        duocGoiRong: false,
+        message: `Ngọc rồng cần khôi phục trong ${minutesLeft} phút nữa`,
+      });
+      return;
+    }
+
+    client.emit('uocRongThanResult', {
+      duocGoiRong: true,
+      message: 'OK',
+    });
+
+    this.server.to(`MAP:${map}`).emit('uocRongThan', {
+      mapToi: true,
+      nguoiUoc: userId,
+    });
+  }
+
+  @SubscribeMessage('uoc-xong')
+  async handleUocXong(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: {}
+  ) {
+    const { userId } = client.data.user;
+    const map = client.data.map;
+
+    const raw = await this.redis.get(this.RONG_THAN_KEY);
+    if (!raw) {
+      client.emit('uocXongResult', { success: false, message: 'Không có rồng thần nào đang được triệu hồi' });
+      return;
+    }
+
+    const { userId: ownerUserId } = JSON.parse(raw);
+    if (String(ownerUserId) !== String(userId)) {
+      client.emit('uocXongResult', { success: false, message: 'Bạn không phải người triệu hồi rồng thần' });
+      return;
+    }
+
+    await this.redis.del(this.RONG_THAN_KEY);
+
+    this.server.to(`MAP:${map}`).emit('uocRongThan', {
+      mapToi: false,
+      nguoiUoc: userId,
+    });
+
+    client.emit('uocXongResult', { success: true });
+  }
+
+  private readonly RONG_THAN_SNAPSHOT_KEY = 'GAME:RONG_THAN:SNAPSHOT';
+  // Poll mỗi 5 phút để detect key rồng thần expire (user crash hoặc không ước).
+  // Cần RONG_THAN_SNAPSHOT_KEY vì:
+  //   - Key expire rồi thì không đọc được {userId, map} nữa → snapshot giữ lại map để emit đúng chỗ
+  //   - Không có snapshot thì raw=null sẽ spam emit reset mỗi 5p mãi mãi
+  //   - Snapshot lưu Redis thay vì memory để tránh bug khi instance giữ snapshot bị chết,
+  //     instance mới acquire lock vẫn đọc được
+  // Flow: raw!=null → cập nhật snapshot
+  //       raw=null && snapshot!=null → key vừa expire, emit reset đúng map, xóa snapshot
+  //       raw=null && snapshot=null  → không có gì, bỏ qua
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async handleRongThanExpiryCron() {
+    let lock: RLock | null = null;
+    try {
+      lock = await this.redlock.acquire(['lock:cron:rongThanExpiry'], 10_000);
+
+      const raw = await this.redis.get(this.RONG_THAN_KEY);
+
+      if (raw) {
+        await this.redis.set(this.RONG_THAN_SNAPSHOT_KEY, raw);
+      } else {
+        const snapshot = await this.redis.get(this.RONG_THAN_SNAPSHOT_KEY);
+        if (snapshot) {
+          const { map } = JSON.parse(snapshot);
+          this.server.to(`MAP:${map}`).emit('uocRongThan', { mapToi: false, nguoiUoc: null });
+          await this.redis.del(this.RONG_THAN_SNAPSHOT_KEY);
+        }
+      }
+    } catch (err) {
+      if (err instanceof ExecutionError || err instanceof ResourceLockedError) {
+        console.warn('Cron rongThan bị lock bởi instance khác, bỏ qua');
+        return;
+      }
+      throw err;
+    } finally {
+      if (lock) {
+        await lock.release();
+      }
+    }
   }
 
   // TODO: 1, Thêm 1 api gửi items Id vào để check xem đúng người sở hữu item đó không 

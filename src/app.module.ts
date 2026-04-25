@@ -5,6 +5,7 @@ import { UserModule } from './user/user.module';
 import { WsModule } from './ws-for-game/ws.module';
 import { RedisModule } from './redis/redis.module';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { ConfigModule } from '@nestjs/config';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    ScheduleModule.forRoot(),
     UserModule,
     WsModule,
     RedisModule,
