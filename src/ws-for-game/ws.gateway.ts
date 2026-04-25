@@ -643,7 +643,17 @@ export class WsGateway {
 
     const raw = await this.redis.get(this.RONG_THAN_KEY);
     if (!raw) {
-      client.emit(`Game:${userId}`, { success: false, message: 'Không có rồng thần nào đang được triệu hồi' });
+      // Key đã expire, cron có thể chưa kịp emit → emit reset cả map luôn cho chắc
+      this.server.to(`MAP:${map}`).emit('uocRongThan', {
+        mapToi: false,
+        nguoiUoc: userId,
+        map: map,
+        x: 0,
+        y: 0,
+        ngocRongUoc: "",
+      });
+      // Xóa snapshot để cron không emit trùng lần nữa
+      await this.redis.del(this.RONG_THAN_SNAPSHOT_KEY);
       return;
     }
 
