@@ -317,85 +317,85 @@ export class WsGateway {
   }
 
 
-  // @SubscribeMessage('player-move')
-  // async handleMove(
-  //   @ConnectedSocket() client: Socket,
-  //   @MessageBody() body: { x: number, y: number, trangthai: string, dir: number, dau: string, than: string, chan: string, timeChoHienBay: Double, lechDauX: Double, lechDauY: Double, lechThanX: Double, lechThanY: Double, lechChanX: Double, lechChanY: Double, frameVanBay: number, dangMangVanBay: string, tenVanBay: string, rong: Double, cao: Double, avatar: string },
-  //   ) {
-  //   const map = client.data.map;
-  //   const { userId } = client.data.user;
+  @SubscribeMessage('player-move')
+  async handleMove(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { x: number, y: number, trangthai: string, dir: number, dau: string, than: string, chan: string, timeChoHienBay: Double, lechDauX: Double, lechDauY: Double, lechThanX: Double, lechThanY: Double, lechChanX: Double, lechChanY: Double, frameVanBay: number, dangMangVanBay: string, tenVanBay: string, rong: Double, cao: Double, avatar: string },
+    ) {
+    const map = client.data.map;
+    const { userId } = client.data.user;
 
-  //   // Dirty flag pattern: chỉ write DB khi có thay đổi thực sự
-  //   // player-move → SET dirty:{userId} EX 60
-  //   // batch save (20s) → check flag → write → DEL flag
-  //   // Lợi: giảm DB write 60-90% khi player idle
-  //   // Sau này có thể viết 1 event socket để set dirty để client action hành đồng thì dirty luôn
+    // Dirty flag pattern: chỉ write DB khi có thay đổi thực sự
+    // player-move → SET dirty:{userId} EX 60
+    // batch save (20s) → check flag → write → DEL flag
+    // Lợi: giảm DB write 60-90% khi player idle
+    // Sau này có thể viết 1 event socket để set dirty để client action hành đồng thì dirty luôn
 
-  //   // TTL 600s (10 phút) — cân bằng giữa 2 yếu tố:
-  //   //
-  //   // 1. DATA DURABILITY (tính đúng đắn dữ liệu):
-  //   //    - Batch save chạy mỗi 20s → trong 600s có 30 lần cơ hội flush
-  //   //    - Nếu server crash, flag vẫn sống đủ lâu để instance mới kịp recover & save
-  //   //    - TTL quá ngắn (vd: 60s) → flag expire trước khi save → mất data
-  //   //
-  //   // 2. MEMORY RECLAMATION (thu hồi bộ nhớ Redis):
-  //   //    - Nếu batch save crash giữa chừng (sau write DB nhưng trước DEL),
-  //   //      flag sẽ tự dọn sau 10p thay vì stuck vĩnh viễn → tránh Redis key leak
-  //   //    - No TTL hoàn toàn: flag zombie tích tụ theo thời gian nếu DEL bị miss
-  //   //
-  //   // Kết luận: 600s = 30x safety margin so với batch interval (20s),
-  //   // đủ dài để đảm bảo data, đủ ngắn để Redis tự dọn rác.
+    // TTL 600s (10 phút) — cân bằng giữa 2 yếu tố:
+    //
+    // 1. DATA DURABILITY (tính đúng đắn dữ liệu):
+    //    - Batch save chạy mỗi 20s → trong 600s có 30 lần cơ hội flush
+    //    - Nếu server crash, flag vẫn sống đủ lâu để instance mới kịp recover & save
+    //    - TTL quá ngắn (vd: 60s) → flag expire trước khi save → mất data
+    //
+    // 2. MEMORY RECLAMATION (thu hồi bộ nhớ Redis):
+    //    - Nếu batch save crash giữa chừng (sau write DB nhưng trước DEL),
+    //      flag sẽ tự dọn sau 10p thay vì stuck vĩnh viễn → tránh Redis key leak
+    //    - No TTL hoàn toàn: flag zombie tích tụ theo thời gian nếu DEL bị miss
+    //
+    // Kết luận: 600s = 30x safety margin so với batch interval (20s),
+    // đủ dài để đảm bảo data, đủ ngắn để Redis tự dọn rác.
 
-  //   this.redis.pipeline()
-  //     .set(`dirty:${userId}`, Date.now(), 'EX', 600, 'NX')
-  //     .hset(`GAME:PLAYER:${userId}`, {
-  //       x: body.x,
-  //       y: body.y,
-  //       trangthai: body.trangthai,
-  //       dir: body.dir,
-  //       dau: body.dau,
-  //       than: body.than,
-  //       chan: body.chan,
-  //       timeChoHienBay: body.timeChoHienBay,
-  //       lechDauX: body.lechDauX,
-  //       lechDauY: body.lechDauY,
-  //       lechThanX: body.lechThanX,
-  //       lechThanY: body.lechThanY,
-  //       lechChanX: body.lechChanX,
-  //       lechChanY: body.lechChanY,
-  //       frameVanBay: body.frameVanBay,
-  //       dangMangVanBay: body.dangMangVanBay,
-  //       tenVanBay: body.tenVanBay,
-  //       rong: body.rong,
-  //       cao: body.cao,
-  //       avatar: body.avatar,
-  //     })
-  //     .exec();
+    this.redis.pipeline()
+      .set(`dirty:${userId}`, Date.now(), 'EX', 600, 'NX')
+      .hset(`GAME:PLAYER:${userId}`, {
+        x: body.x,
+        y: body.y,
+        trangthai: body.trangthai,
+        dir: body.dir,
+        dau: body.dau,
+        than: body.than,
+        chan: body.chan,
+        timeChoHienBay: body.timeChoHienBay,
+        lechDauX: body.lechDauX,
+        lechDauY: body.lechDauY,
+        lechThanX: body.lechThanX,
+        lechThanY: body.lechThanY,
+        lechChanX: body.lechChanX,
+        lechChanY: body.lechChanY,
+        frameVanBay: body.frameVanBay,
+        dangMangVanBay: body.dangMangVanBay,
+        tenVanBay: body.tenVanBay,
+        rong: body.rong,
+        cao: body.cao,
+        avatar: body.avatar,
+      })
+      .exec();
 
-  //   this.server.to(`MAP:${map}`).emit('playerSync', {
-  //     userId,
-  //     x: body.x,
-  //     y: body.y,
-  //     trangthai: body.trangthai,
-  //     dir: body.dir,
-  //     dau: body.dau,
-  //     than: body.than,
-  //     chan: body.chan,
-  //     timeChoHienBay: body.timeChoHienBay,
-  //     lechDauX: body.lechDauX,
-  //     lechDauY: body.lechDauY,
-  //     lechThanX: body.lechThanX,
-  //     lechThanY: body.lechThanY,
-  //     lechChanX: body.lechChanX,
-  //     lechChanY: body.lechChanY,
-  //     frameVanBay: body.frameVanBay,
-  //     dangMangVanBay: body.dangMangVanBay,
-  //     tenVanBay: body.tenVanBay,
-  //     rong: body.rong,
-  //     cao: body.cao,
-  //     avatar: body.avatar,
-  //   });
-  // }
+    this.server.to(`MAP:${map}`).emit('playerSync', {
+      userId,
+      x: body.x,
+      y: body.y,
+      trangthai: body.trangthai,
+      dir: body.dir,
+      dau: body.dau,
+      than: body.than,
+      chan: body.chan,
+      timeChoHienBay: body.timeChoHienBay,
+      lechDauX: body.lechDauX,
+      lechDauY: body.lechDauY,
+      lechThanX: body.lechThanX,
+      lechThanY: body.lechThanY,
+      lechChanX: body.lechChanX,
+      lechChanY: body.lechChanY,
+      frameVanBay: body.frameVanBay,
+      dangMangVanBay: body.dangMangVanBay,
+      tenVanBay: body.tenVanBay,
+      rong: body.rong,
+      cao: body.cao,
+      avatar: body.avatar,
+    });
+  }
 
   /**
    * [use-skill] Xử lý khi user dùng skill
