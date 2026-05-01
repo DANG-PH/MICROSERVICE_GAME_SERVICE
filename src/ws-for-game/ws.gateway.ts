@@ -94,7 +94,6 @@ export class WsGateway {
         lechThanY: 0,
         lechChanX: 0,
         lechChanY: 0,
-        frameVanBay: 1,
         dangMangVanBay: false,
         tenVanBay: "base",
         rong: 50,
@@ -158,7 +157,6 @@ export class WsGateway {
         lechThanY: 0,
         lechChanX: 0,
         lechChanY: 0,
-        frameVanBay: 1,
         dangMangVanBay: false,
         tenVanBay: "base",
         rong: 50,
@@ -205,7 +203,7 @@ export class WsGateway {
   @SubscribeMessage('setMap')
   async handleSetMap(
     @ConnectedSocket() client: Socket,
-    @MessageBody() body: { oldMap:string, map: string, x: number, y: number, dir: number, trangthai: string, dau: string, than: string, chan: string, timeChoHienBay: Double, lechDauX: Double, lechDauY: Double, lechThanX: Double, lechThanY: Double, lechChanX: Double, lechChanY: Double, frameVanBay: number, dangMangVanBay: string, tenVanBay: string, rong: Double, cao: Double, avatar: string },
+    @MessageBody() body: { oldMap:string, map: string, x: number, y: number, dir: number, trangthai: string, dau: string, than: string, chan: string, timeChoHienBay: Double, lechDauX: Double, lechDauY: Double, lechThanX: Double, lechThanY: Double, lechChanX: Double, lechChanY: Double, dangMangVanBay: string, tenVanBay: string, rong: Double, cao: Double, avatar: string },
   ) {
     const userId = client.data.user.userId;
 
@@ -239,7 +237,6 @@ export class WsGateway {
       lechThanY: body.lechThanY,
       lechChanX: body.lechChanX,
       lechChanY: body.lechChanY,
-      frameVanBay: body.frameVanBay,
       dangMangVanBay: body.dangMangVanBay,
       tenVanBay: body.tenVanBay,
       rong: body.rong,
@@ -303,7 +300,6 @@ export class WsGateway {
       lechThanY: body.lechThanY,
       lechChanX: body.lechChanX,
       lechChanY: body.lechChanY,
-      frameVanBay: body.frameVanBay,
       dangMangVanBay: body.dangMangVanBay,
       tenVanBay: body.tenVanBay,
       rong: body.rong,
@@ -320,7 +316,7 @@ export class WsGateway {
   @SubscribeMessage('player-move')
   async handleMove(
     @ConnectedSocket() client: Socket,
-    @MessageBody() body: { x: number, y: number, trangthai: string, dir: number, dau: string, than: string, chan: string, timeChoHienBay: Double, lechDauX: Double, lechDauY: Double, lechThanX: Double, lechThanY: Double, lechChanX: Double, lechChanY: Double, frameVanBay: number, dangMangVanBay: string, tenVanBay: string, rong: Double, cao: Double, avatar: string },
+    @MessageBody() body: { x: number, y: number, trangthai: string, dir: number, dau: string, than: string, chan: string, timeChoHienBay: Double, lechDauX: Double, lechDauY: Double, lechThanX: Double, lechThanY: Double, lechChanX: Double, lechChanY: Double, dangMangVanBay: string, tenVanBay: string, rong: Double, cao: Double, avatar: string },
     ) {
     const map = client.data.map;
     const { userId } = client.data.user;
@@ -363,7 +359,6 @@ export class WsGateway {
         lechThanY: body.lechThanY,
         lechChanX: body.lechChanX,
         lechChanY: body.lechChanY,
-        frameVanBay: body.frameVanBay,
         dangMangVanBay: body.dangMangVanBay,
         tenVanBay: body.tenVanBay,
         rong: body.rong,
@@ -388,7 +383,6 @@ export class WsGateway {
       lechThanY: body.lechThanY,
       lechChanX: body.lechChanX,
       lechChanY: body.lechChanY,
-      frameVanBay: body.frameVanBay,
       dangMangVanBay: body.dangMangVanBay,
       tenVanBay: body.tenVanBay,
       rong: body.rong,
@@ -1209,7 +1203,6 @@ export class WsGateway {
         lechThanY: playerState.lechThanY,
         lechChanX: playerState.lechChanX,
         lechChanY: playerState.lechChanY,
-        frameVanBay: playerState.frameVanBay,
         dangMangVanBay: playerState.dangMangVanBay,
         tenVanBay: playerState.tenVanBay,
         rong: playerState.rong,
