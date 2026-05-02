@@ -179,7 +179,6 @@ export class WsGateway {
   }
 
   async handleDisconnect(client: Socket) {
-    console.log('handleDisconnect called, userId:', client.data.user?.userId);
     const userId = client.data.user?.userId;
     const map = client.data.map;
     if (!userId) return;
