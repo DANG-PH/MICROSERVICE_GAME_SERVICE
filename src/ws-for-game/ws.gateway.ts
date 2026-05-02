@@ -41,6 +41,7 @@ export class WsGateway {
     private readonly userService: UserService,
     @Inject(String(process.env.RABBIT_SERVICE)) private readonly queueClient: ClientProxy,
     @Inject('REDIS_CLIENT') private readonly redis: Redis,
+    @Inject('NATS_CLIENT') private readonly natsClient: ClientProxy,
   ) {
     this.redlock = new Redlock([this.redis], { retryCount: 0 }); // 1 node redis
     // retryCount: 0 nghĩa là thử acquire lock đúng 1 lần, nếu thất bại thì throw ngay, không retry.
@@ -199,6 +200,20 @@ export class WsGateway {
       await this.redis.srem(`GAME:MAP:${map}`, userId);
       client.to(`MAP:${map}`).emit('playerDespawn', { userId });
     }
+
+  // Notify Go game-service để cleanup in-memory state (Manager.RemovePlayerFromMap).
+  // TẠI SAO NATS THAY VÌ:
+  // REST/gRPC:     k phù hợp fire and forget event mà đang blocking     
+  // RabbitMQ:      Đã có sẵn nhưng sinh ra cho reliable job queue (payment, order...). Mất package ở case này k sao vì Go tự cleanup mỗi 120s rồi
+  // Kafka:         Distributed log, sinh ra cho high-throughput event streaming
+  // Redis Pub/Sub: Kỹ thuật ổn, nhưng Redis đang giữ vai trò storage (GAME:PLAYER, dirty flag) → mixing concern. 
+  // Redis Stream:  Có buffer + consumer group như Kafka nhỏ, nhưng vẫn mixing concern với storage. Thêm complexity quản lý offset, ACK, consumer group.
+  // WebSocket:     Stateful, cần maintain connection NestJS↔Go. Overkill cho event đơn giản 1 chiều. Reconnect logic phức tạp.
+  // NATS:          Fire-and-forget ~µs, không block handleDisconnect.
+  //                Buffer 8MB khi Go down → tự flush khi Go lên lại.
+  //                Pub/Sub thuần — đúng pattern cho realtime event 1 chiều.
+  //                Không cần reliable delivery vì Go có pongWait 120s làm safety net.
+    this.natsClient.emit('player.disconnected', { userId, map });
   }
 
   @SubscribeMessage('setMap')
@@ -733,7 +748,7 @@ export class WsGateway {
       }
     } catch (err) {
       if (err instanceof ExecutionError || err instanceof ResourceLockedError) {
-        console.warn('Cron rongThan bị lock bởi instance khác, bỏ qua');
+        // console.warn('Cron rongThan bị lock bởi instance khác, bỏ qua');
         return;
       }
       throw err;

@@ -39,6 +39,7 @@
     "dotenv": "^17.4.2",
     "ioredis": "^5.10.1",
     "mongodb": "^7.2.0",
+    "nats": "^2.29.3",
     "redlock": "^5.0.0-beta.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",

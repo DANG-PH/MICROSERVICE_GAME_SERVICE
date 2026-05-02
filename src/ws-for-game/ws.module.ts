@@ -5,6 +5,7 @@ import { UserModule } from "../user/user.module";
 import { WsGateway } from "./ws.gateway";
 import { ClientsModule, Transport } from "@nestjs/microservices";
 import { GameConsumer } from "./game.controller";
+import { NatsModule } from "src/nats/nats.module";
 
 @Module({
     imports: [
@@ -19,6 +20,7 @@ import { GameConsumer } from "./game.controller";
                 },
             },
         ]),
+        NatsModule,
         UserModule,
     ],
     controllers: [GameConsumer],
