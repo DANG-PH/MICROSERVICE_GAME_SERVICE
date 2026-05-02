@@ -178,12 +178,13 @@ export class WsGateway {
   }
 
   async handleDisconnect(client: Socket) {
+    console.log('handleDisconnect called, userId:', client.data.user?.userId);
     const userId = client.data.user?.userId;
     const map = client.data.map;
     if (!userId) return;
 
     const state = await this.redis.hgetall(`GAME:PLAYER:${userId}`);
-    if (!state || !state.x) return;
+    if (!state) return;
 
     await this.userService.handleSavePosition({
       userId,
