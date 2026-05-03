@@ -658,21 +658,23 @@ export class WsGateway {
     ) as [string, string];
 
     if (status === 'COOLDOWN') {
-      // 0 -> 10p
-      const minutesCooldown = Math.ceil(Number(remain) / 60);
+      // Cooldown sau khi ước 0 - 10p
+      const seconds = Number(remain);
+      const text = seconds >= 60 ? `${Math.ceil(seconds / 60)} phút` : `${seconds} giây`;
       client.emit('uocRongThanResult', {
         duocGoiRong: false,
-        message: `Bạn cần chờ ${minutesCooldown} phút nữa để gọi rồng thần`,
+        message: `Bạn cần chờ ${text} nữa để gọi rồng thần`,
       });
       return;
     }
 
     if (status === 'ACTIVE') {
-      // 0 -> 5p
-      const minutesLeft = Math.ceil(Number(remain) / 60);
+      // Đang có người ước, cần đợi 0 - 5p (tối đa 5p) + 10p (sau khi cooldown khi ước xong)
+      const seconds = Number(remain) + this.TIME_COOLDOWN_UOC; // 0-5p + 10p
+      const text = seconds >= 60 ? `${Math.ceil(seconds / 60)} phút` : `${seconds} giây`;
       client.emit('uocRongThanResult', {
         duocGoiRong: false,
-        message: `Rồng thần đang được triệu hồi bởi người khác, còn ${minutesLeft} phút`,
+        message: `Rồng thần đang được triệu hồi bởi người khác, tối đa còn khoảng ${text}`,
       });
       return;
     }
