@@ -111,11 +111,13 @@ export class WsGateway {
       const players = await this.getPlayersInMap(state.map);
       client.emit('mapSnapshot', players);
       await this.syncSkillsToClient(client, state.map);
-      const rongThanRaw = await this.redis.get(this.RONG_THAN_KEY);
+
+      const rongThanRaw = await this.redis.get(this.RONG_THAN_ACTIVE_KEY);
       if (rongThanRaw) {
         const { userId: ownerUserId, map: rongMap, ngocRongUoc, x, y, gameName } = JSON.parse(rongThanRaw);
         if (rongMap === state.map) {
           client.emit('uocRongThan', { 
+            type: 'DANG_ACTIVE',
             mapToi: true, 
             nguoiUoc: ownerUserId, 
             gameNameNguoiUoc: gameName,
@@ -128,6 +130,7 @@ export class WsGateway {
       } else {
         // Key không còn -> reset state client phòng trường hợp client còn state cũ
         client.emit('uocRongThan', {
+          type: 'KHONG_ACTIVE',
           mapToi: false,
           nguoiUoc: null,
           gameNameNguoiUoc: null,
@@ -271,33 +274,35 @@ export class WsGateway {
     const players = await this.getPlayersInMap(body.map);
     client.emit('mapSnapshot', players);
     await this.syncSkillsToClient(client, body.map);
-    const rongThanRaw = await this.redis.get(this.RONG_THAN_KEY);
-    if (rongThanRaw) {
-      const { userId: ownerUserId, map: rongMap, ngocRongUoc, x, y, gameName } = JSON.parse(rongThanRaw);
-      if (rongMap === body.map) {
-        const ownerPlayer = players.find(p => p.userId == ownerUserId); 
-        client.emit('uocRongThan', { 
-          mapToi: true, 
-          nguoiUoc: ownerUserId, 
-          gameNameNguoiUoc: gameName,
-          map: rongMap, 
-          x: x,
-          y: y,
-          ngocRongUoc: ngocRongUoc,
-        });
-      }
-    } else {
-      // Key không còn -> reset state client phòng trường hợp client còn state cũ
-      client.emit('uocRongThan', {
-        mapToi: false,
-        nguoiUoc: null,
-        gameNameNguoiUoc: null,
-        map: body.map,
-        x: 0,
-        y: 0,
-        ngocRongUoc: "",
-      });
-    }
+
+    // Logic map tối theo map gọi rồng thì cần cái này (hiện tại all map thì không cần)
+    // const rongThanRaw = await this.redis.get(this.RONG_THAN_ACTIVE_KEY);
+    // if (rongThanRaw) {
+    //   const { userId: ownerUserId, map: rongMap, ngocRongUoc, x, y, gameName } = JSON.parse(rongThanRaw);
+    //   if (rongMap === body.map) {
+    //     const ownerPlayer = players.find(p => p.userId == ownerUserId); 
+    //     client.emit('uocRongThan', { 
+    //       mapToi: true, 
+    //       nguoiUoc: ownerUserId, 
+    //       gameNameNguoiUoc: gameName,
+    //       map: rongMap, 
+    //       x: x,
+    //       y: y,
+    //       ngocRongUoc: ngocRongUoc,
+    //     });
+    //   }
+    // } else {
+    //   // Key không còn -> reset state client phòng trường hợp client còn state cũ
+    //   client.emit('uocRongThan', {
+    //     mapToi: false,
+    //     nguoiUoc: null,
+    //     gameNameNguoiUoc: null,
+    //     map: body.map,
+    //     x: 0,
+    //     y: 0,
+    //     ngocRongUoc: "",
+    //   });
+    // }
 
     client.to(`MAP:${body.map}`).emit('playerSpawn', {
       userId,
@@ -601,10 +606,16 @@ export class WsGateway {
     client.to(`NotificationGame`).emit('notification', { tinNhan: body.tinNhan });
   }
 
-  private readonly RONG_THAN_KEY = 'GAME:RONG_THAN:ACTIVE'; // value: JSON {userId, map}
-  private readonly TIME_DELAY_UOC_RONG = 10 * 60; // 10 phút 
-  // private readonly TIME_DELAY_UOC_RONG = 10 ; // 10s
+  // Constants
+  private readonly RONG_THAN_ACTIVE_KEY    = 'GAME:RONG_THAN:ACTIVE';
+  private readonly RONG_THAN_SNAPSHOT_KEY  = 'GAME:RONG_THAN:SNAPSHOT';
+  private readonly TIME_ACTIVE_RONG        = 300;  // 5 phút - tối đa giữ rồng
+  private readonly TIME_COOLDOWN_UOC       = 600;  // 10 phút - cooldown sau khi ước
+  private readonly TIME_ACTIVE_RONG_DEV    = 60;  // 1p - tối đa giữ rồng
+  private readonly TIME_COOLDOWN_UOC_DEV   = 120;  // 2p - cooldown sau khi ước
+  private readonly RONG_THAN_COOLDOWN_SERVER_KEY = 'GAME:RONG_THAN:COOLDOWN:SERVER';
 
+  // ==================== GỌI RỒNG ====================
   @SubscribeMessage('uoc-rong-than')
   async handleUocRongThan(
     @ConnectedSocket() client: Socket,
@@ -613,27 +624,25 @@ export class WsGateway {
     const { userId } = client.data.user;
     const map = client.data.map;
 
-    // Lấy tọa độ người ước từ Redis
     const playerState = await this.redis.hgetall(`GAME:PLAYER:${userId}`);
 
-    const UOC_RONG_THAN_SCRIPT = `
-      local key    = KEYS[1]
-      local value  = ARGV[1]
-      local ttl    = tonumber(ARGV[2])
+    const SCRIPT = `
+      local cooldown = redis.call('TTL', KEYS[1])
+      if cooldown > 0 then return {'COOLDOWN', tostring(cooldown)} end
 
-      local existing = redis.call('GET', key)
-      if existing then
-        local remain = redis.call('TTL', key)
-        return {'COOLDOWN', tostring(remain)}
+      local active = redis.call('EXISTS', KEYS[2])
+      if active == 1 then
+        local remain = redis.call('TTL', KEYS[2])
+        return {'ACTIVE', tostring(remain)}
       end
 
-      redis.call('SET', key, value, 'EX', ttl)
+      redis.call('SET', KEYS[2], ARGV[1], 'EX', ARGV[2])
       return {'OK', '0'}
     `;
 
-    const value = JSON.stringify({ 
-      userId, 
-      map, 
+    const value = JSON.stringify({
+      userId,
+      map,
       ngocRongUoc: body.ngocRongUoc,
       x: Number(playerState.x),
       y: Number(playerState.y),
@@ -641,38 +650,64 @@ export class WsGateway {
     });
 
     const [status, remain] = await this.redis.eval(
-      UOC_RONG_THAN_SCRIPT,
-      1,
-      this.RONG_THAN_KEY,
-      value,
-      String(this.TIME_DELAY_UOC_RONG),
+      SCRIPT, 2,
+      this.RONG_THAN_COOLDOWN_SERVER_KEY,  // KEYS[1]
+      this.RONG_THAN_ACTIVE_KEY,         // KEYS[2]
+      value,                             // ARGV[1]
+      String(this.TIME_ACTIVE_RONG_DEV),     // ARGV[2]
     ) as [string, string];
 
     if (status === 'COOLDOWN') {
-      const minutesLeft = Math.ceil(Number(remain) / 60);
+      // 0 -> 10p
+      const minutesCooldown = Math.ceil(Number(remain) / 60);
       client.emit('uocRongThanResult', {
         duocGoiRong: false,
-        message: `Ngọc rồng cần khôi phục trong ${minutesLeft} phút nữa`,
+        message: `Bạn cần chờ ${minutesCooldown} phút nữa để gọi rồng thần`,
       });
       return;
     }
 
-    client.emit('uocRongThanResult', {
-      duocGoiRong: true,
-      message: 'OK',
-    });
+    if (status === 'ACTIVE') {
+      // 0 -> 5p
+      const minutesLeft = Math.ceil(Number(remain) / 60);
+      client.emit('uocRongThanResult', {
+        duocGoiRong: false,
+        message: `Rồng thần đang được triệu hồi bởi người khác, còn ${minutesLeft} phút`,
+      });
+      return;
+    }
 
-    this.server.to(`MAP:${map}`).emit('uocRongThan', {
+    // OK - emit cho toàn map
+    client.emit('uocRongThanResult', { duocGoiRong: true, message: 'OK', timeHienRongThan: this.TIME_ACTIVE_RONG_DEV });
+
+    // Logic này là tối 1 map (hiện tại behavior cần implements là tất cả các map đều tối - như trong phim dragon ball)
+    // this.server.to(`MAP:${map}`).emit('uocRongThan', {
+    //   mapToi: true,
+    //   nguoiUoc: userId,
+    //   gameNameNguoiUoc: playerState.gameName,
+    //   map,
+    //   x: Number(playerState.x),
+    //   y: Number(playerState.y),
+    //   ngocRongUoc: body.ngocRongUoc,
+    // });
+
+    this.server.to('NotificationGame').emit('uocRongThan', {
+      type: 'BAT_DAU',
       mapToi: true,
       nguoiUoc: userId,
       gameNameNguoiUoc: playerState.gameName,
-      map: map, // Gửi thêm map để tránh user đã chuyển map mới khi gói tin chưa kịp tới
+      map,
       x: Number(playerState.x),
       y: Number(playerState.y),
       ngocRongUoc: body.ngocRongUoc,
     });
+
+    this.server.to('NotificationGame').emit('notification', {
+      tinNhan: `Người chơi ${playerState.gameName} vừa gọi rồng thần tại ${map}`,
+    });
   }
 
+  // ==================== ƯỚC XONG ====================
   @SubscribeMessage('uoc-xong')
   async handleUocXong(
     @ConnectedSocket() client: Socket,
@@ -681,80 +716,110 @@ export class WsGateway {
     const { userId } = client.data.user;
     const map = client.data.map;
 
-    const raw = await this.redis.get(this.RONG_THAN_KEY);
-    if (!raw) {
-      // Key đã expire, cron có thể chưa kịp emit → emit reset cả map luôn cho chắc
-      this.server.to(`MAP:${map}`).emit('uocRongThan', {
-        mapToi: false,
-        nguoiUoc: userId,
-        gameNameNguoiUoc: null,
-        map: map,
-        x: 0,
-        y: 0,
-        ngocRongUoc: "",
-      });
-      // Xóa snapshot để cron không emit trùng lần nữa
-      await this.redis.del(this.RONG_THAN_SNAPSHOT_KEY);
+    const SCRIPT = `
+      local raw = redis.call('GET', KEYS[1])
+      if not raw then return 'EXPIRED' end
+
+      local data = cjson.decode(raw)
+      if tostring(data.userId) ~= ARGV[1] then return 'NOT_OWNER' end
+
+      redis.call('DEL', KEYS[1])
+      redis.call('DEL', KEYS[3])
+      redis.call('SET', KEYS[2], '1', 'EX', ARGV[2])
+      return 'OK'
+    `;
+
+    const result = await this.redis.eval(
+      SCRIPT, 3,
+      this.RONG_THAN_ACTIVE_KEY,          // KEYS[1]
+      this.RONG_THAN_COOLDOWN_SERVER_KEY,   // KEYS[2]
+      this.RONG_THAN_SNAPSHOT_KEY,        // KEYS[3] - xóa snapshot để cron không emit trùng
+      String(userId),                     // ARGV[1]
+      String(this.TIME_COOLDOWN_UOC_DEV),     // ARGV[2]
+    ) as string;
+
+    if (result === 'EXPIRED') {
+      // Rồng đã tự expire trước khi ước xong → cron sẽ/đã emit reset, client tự xử lý
+      client.emit('uocXongResult', { success: false, message: 'Rồng thần đã biến mất trước khi bạn ước' });
       return;
     }
 
-    const { userId: ownerUserId, mapRedis } = JSON.parse(raw);
-    if (String(ownerUserId) !== String(userId)) {
-      client.emit(`Game:${userId}`, { success: false, message: 'Bạn không phải người triệu hồi rồng thần' });
+    if (result === 'NOT_OWNER') {
+      client.emit('uocXongResult', { success: false, message: 'Bạn không phải người triệu hồi rồng thần' });
       return;
     }
 
-    await this.redis.del(this.RONG_THAN_KEY);
+    // OK - emit rồng biến mất cho toàn map
+    client.emit('uocXongResult', { success: true });
 
-    this.server.to(`MAP:${map}`).emit('uocRongThan', {
+    // Logic này là tối 1 map (hiện tại behavior cần implements là tất cả các map đều tối - như trong phim dragon ball)
+    // this.server.to(`MAP:${map}`).emit('uocRongThan', {
+    //   mapToi: false,
+    //   nguoiUoc: userId,
+    //   gameNameNguoiUoc: null,
+    //   map,
+    //   x: 0, y: 0,
+    //   ngocRongUoc: '',
+    // });
+
+    this.server.to(`NotificationGame`).emit('uocRongThan', {
+      type: 'KET_THUC',
       mapToi: false,
       nguoiUoc: userId,
       gameNameNguoiUoc: null,
-      map: mapRedis,
-      x: 0,
-      y: 0,
-      ngocRongUoc: "",
+      map,
+      x: 0, y: 0,
+      ngocRongUoc: '',
     });
   }
 
-  private readonly RONG_THAN_SNAPSHOT_KEY = 'GAME:RONG_THAN:SNAPSHOT';
-  // Poll mỗi 5 phút để detect key rồng thần expire (user crash hoặc không ước).
-  // Cần RONG_THAN_SNAPSHOT_KEY vì:
-  //   - Key expire rồi thì không đọc được {userId, map} nữa → snapshot giữ lại map để emit đúng chỗ
-  //   - Không có snapshot thì raw=null sẽ spam emit reset mỗi 5p mãi mãi
-  //   - Snapshot lưu Redis thay vì memory để tránh bug khi instance giữ snapshot bị chết,
-  //     instance mới acquire lock vẫn đọc được
-  // Flow: raw!=null → cập nhật snapshot
-  //       raw=null && snapshot!=null → key vừa expire, emit reset đúng map, xóa snapshot
-  //       raw=null && snapshot=null  → không có gì, bỏ qua
-  @Cron(CronExpression.EVERY_5_MINUTES)
+  // ==================== CRON - detect expire ====================
+  @Cron(CronExpression.EVERY_10_SECONDS)
   async handleRongThanExpiryCron() {
     let lock: RLock | null = null;
     try {
       lock = await this.redlock.acquire(['lock:cron:rongThanExpiry'], 10_000);
 
-      const raw = await this.redis.get(this.RONG_THAN_KEY);
+      const raw = await this.redis.get(this.RONG_THAN_ACTIVE_KEY);
 
       if (raw) {
+        // Rồng đang active → giữ snapshot để dùng khi expire
         await this.redis.set(this.RONG_THAN_SNAPSHOT_KEY, raw);
       } else {
+        // Rồng không còn active
         const snapshot = await this.redis.get(this.RONG_THAN_SNAPSHOT_KEY);
         if (snapshot) {
+          // Vừa expire (không phải ước xong vì uoc-xong đã del snapshot)
+          // → emit reset, không set COOLDOWN vì người chơi không ước được
           const { map } = JSON.parse(snapshot);
-          this.server.to(`MAP:${map}`).emit('uocRongThan', { mapToi: false, nguoiUoc: null,gameNameNguoiUoc: null, map: map, x: 0, y: 0, ngocRongUoc: "" });
+          // this.server.to(`MAP:${map}`).emit('uocRongThan', {
+          //   mapToi: false,
+          //   nguoiUoc: null,
+          //   gameNameNguoiUoc: null,
+          //   map,
+          //   x: 0, y: 0,
+          //   ngocRongUoc: '',
+          // });
+          this.server.to(`NotificationGame`).emit('uocRongThan', {
+            type: 'HET_HAN',
+            mapToi: false,
+            nguoiUoc: null,
+            gameNameNguoiUoc: null,
+            map,
+            x: 0, y: 0,
+            ngocRongUoc: '',
+          });
           await this.redis.del(this.RONG_THAN_SNAPSHOT_KEY);
+          // Set cooldown server khi hết hạn (Tùy design, ở đây theo behavior như phim là hợp lí)
+          await this.redis.set(this.RONG_THAN_COOLDOWN_SERVER_KEY, '1', 'EX', this.TIME_COOLDOWN_UOC_DEV);
         }
+        // snapshot=null → uoc-xong đã xử lý rồi, bỏ qua
       }
     } catch (err) {
-      if (err instanceof ExecutionError || err instanceof ResourceLockedError) {
-        // console.warn('Cron rongThan bị lock bởi instance khác, bỏ qua');
-        return;
-      }
+      if (err instanceof ExecutionError || err instanceof ResourceLockedError) return;
       throw err;
     } finally {
-      if (lock) {
-        await lock.release();
-      }
+      if (lock) await lock.release();
     }
   }
 
