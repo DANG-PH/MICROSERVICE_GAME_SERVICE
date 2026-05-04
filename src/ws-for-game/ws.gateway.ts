@@ -632,11 +632,12 @@ export class WsGateway {
 
       local active = redis.call('EXISTS', KEYS[2])
       if active == 1 then
-        local remain = redis.call('TTL', KEYS[2])
+        local remain = redis.call('TTL', KEYS[1])  -- dùng TTL của COOLDOWN luôn
         return {'ACTIVE', tostring(remain)}
       end
 
-      redis.call('SET', KEYS[2], ARGV[1], 'EX', ARGV[2])
+      redis.call('SET', KEYS[2], ARGV[1], 'EX', ARGV[2])  -- ACTIVE_KEY = TIME_ACTIVE
+      redis.call('SET', KEYS[1], '1', 'EX', ARGV[3])       -- COOLDOWN_KEY = TIME_COOLDOWN (set ngay)
       return {'OK', '0'}
     `;
 
@@ -652,29 +653,29 @@ export class WsGateway {
     const [status, remain] = await this.redis.eval(
       SCRIPT, 2,
       this.RONG_THAN_COOLDOWN_SERVER_KEY,  // KEYS[1]
-      this.RONG_THAN_ACTIVE_KEY,         // KEYS[2]
-      value,                             // ARGV[1]
-      String(this.TIME_ACTIVE_RONG_DEV),     // ARGV[2]
+      this.RONG_THAN_ACTIVE_KEY,           // KEYS[2]
+      value,                               // ARGV[1]
+      String(this.TIME_ACTIVE_RONG_DEV),   // ARGV[2]
+      String(this.TIME_COOLDOWN_UOC_DEV),  // ARGV[3] 
     ) as [string, string];
 
+    if (status === 'ACTIVE') {
+      // remain ở đây là TTL của COOLDOWN_KEY → chính xác thời gian tối đa phải chờ
+      const seconds = Number(remain);
+      const text = seconds >= 60 ? `${Math.ceil(seconds / 60)} phút` : `${seconds} giây`;
+      client.emit('uocRongThanResult', {
+        duocGoiRong: false,
+        message: `Rồng thần đang được triệu hồi bởi người khác, vui lòng đợi ${text}`,  
+      });
+      return;
+    }
+
     if (status === 'COOLDOWN') {
-      // Cooldown sau khi ước 0 - 10p
       const seconds = Number(remain);
       const text = seconds >= 60 ? `${Math.ceil(seconds / 60)} phút` : `${seconds} giây`;
       client.emit('uocRongThanResult', {
         duocGoiRong: false,
         message: `Bạn cần chờ ${text} nữa để gọi rồng thần`,
-      });
-      return;
-    }
-
-    if (status === 'ACTIVE') {
-      // Đang có người ước, cần đợi 0 - 5p (tối đa 5p) + 10p (sau khi cooldown khi ước xong)
-      const seconds = Number(remain) + this.TIME_COOLDOWN_UOC_DEV; // 0-5p + 10p
-      const text = seconds >= 60 ? `${Math.ceil(seconds / 60)} phút` : `${seconds} giây`;
-      client.emit('uocRongThanResult', {
-        duocGoiRong: false,
-        message: `Rồng thần đang được triệu hồi bởi người khác, tối đa còn khoảng ${text}`,
       });
       return;
     }
@@ -725,22 +726,44 @@ export class WsGateway {
       local data = cjson.decode(raw)
       if tostring(data.userId) ~= ARGV[1] then return 'NOT_OWNER' end
 
-      redis.call('DEL', KEYS[1])
-      redis.call('DEL', KEYS[3])
-      redis.call('SET', KEYS[2], '1', 'EX', ARGV[2])
+      redis.call('DEL', KEYS[1])   -- xóa ACTIVE_KEY
+      redis.call('DEL', KEYS[2])   -- xóa SNAPSHOT_KEY
       return 'OK'
     `;
 
     const result = await this.redis.eval(
-      SCRIPT, 3,
-      this.RONG_THAN_ACTIVE_KEY,          // KEYS[1]
-      this.RONG_THAN_COOLDOWN_SERVER_KEY,   // KEYS[2]
-      this.RONG_THAN_SNAPSHOT_KEY,        // KEYS[3] - xóa snapshot để cron không emit trùng
-      String(userId),                     // ARGV[1]
-      String(this.TIME_COOLDOWN_UOC_DEV),     // ARGV[2]
+      SCRIPT, 2,                             // 2 keys
+      this.RONG_THAN_ACTIVE_KEY,             // KEYS[1]
+      this.RONG_THAN_SNAPSHOT_KEY,           // KEYS[2]
+      String(userId),                        // ARGV[1]
     ) as string;
 
     if (result === 'EXPIRED') {
+      // Client gọi khi hết hạn / nếu clockOffset sai mà client xong -> key vẫn còn thì cron đảm nhiệm nốt
+      // Cron ở đây là safety-net cho case này và case user crash game dẫn đến k gửi event này khi ước xong / đếm ngược hết hạn ở client
+      const SCRIPT_EXPIRED = `
+        local snap = redis.call('GET', KEYS[1])
+        if not snap then return '' end
+        redis.call('DEL', KEYS[1])
+        return snap
+      `;
+      const snapRaw = await this.redis.eval(
+        SCRIPT_EXPIRED, 1,
+        this.RONG_THAN_SNAPSHOT_KEY,
+      ) as string;
+
+      if (snapRaw) {
+        const { map } = JSON.parse(snapRaw);
+        this.server.to(`NotificationGame`).emit('uocRongThan', {
+          type: 'HET_HAN',
+          mapToi: false,
+          nguoiUoc: null,
+          gameNameNguoiUoc: null,
+          map,
+          x: 0, y: 0,
+          ngocRongUoc: '',
+        });
+      }
       // Rồng đã tự expire trước khi ước xong → cron sẽ/đã emit reset, client tự xử lý
       client.emit('uocXongResult', { success: false, message: 'Rồng thần đã biến mất trước khi bạn ước' });
       return;
@@ -793,7 +816,7 @@ export class WsGateway {
         const snapshot = await this.redis.get(this.RONG_THAN_SNAPSHOT_KEY);
         if (snapshot) {
           // Vừa expire (không phải ước xong vì uoc-xong đã del snapshot)
-          // → emit reset, không set COOLDOWN vì người chơi không ước được
+          // → emit reset, COOLDOWN_KEY đã được set từ lúc gọi rồng, tự expire
           const { map } = JSON.parse(snapshot);
           // this.server.to(`MAP:${map}`).emit('uocRongThan', {
           //   mapToi: false,
@@ -813,8 +836,6 @@ export class WsGateway {
             ngocRongUoc: '',
           });
           await this.redis.del(this.RONG_THAN_SNAPSHOT_KEY);
-          // Set cooldown server khi hết hạn (Tùy design, ở đây theo behavior như phim là hợp lí)
-          await this.redis.set(this.RONG_THAN_COOLDOWN_SERVER_KEY, '1', 'EX', this.TIME_COOLDOWN_UOC_DEV);
         }
         // snapshot=null → uoc-xong đã xử lý rồi, bỏ qua
       }
