@@ -611,8 +611,8 @@ export class WsGateway {
   private readonly RONG_THAN_SNAPSHOT_KEY  = 'GAME:RONG_THAN:SNAPSHOT';
   private readonly TIME_ACTIVE_RONG        = 300;  // 5 phút - tối đa giữ rồng
   private readonly TIME_COOLDOWN_UOC       = 600;  // 10 phút - cooldown sau khi ước
-  private readonly TIME_ACTIVE_RONG_DEV    = 60;  // 1p - tối đa giữ rồng
-  private readonly TIME_COOLDOWN_UOC_DEV   = 120;  // 2p - cooldown sau khi ước
+  private readonly TIME_ACTIVE_RONG_DEV    = 30;  // 30s - tối đa giữ rồng
+  private readonly TIME_COOLDOWN_UOC_DEV   = 60;  // 1p - cooldown sau khi ước
   private readonly RONG_THAN_COOLDOWN_SERVER_KEY = 'GAME:RONG_THAN:COOLDOWN:SERVER';
 
   // ==================== GỌI RỒNG ====================
@@ -670,7 +670,7 @@ export class WsGateway {
 
     if (status === 'ACTIVE') {
       // Đang có người ước, cần đợi 0 - 5p (tối đa 5p) + 10p (sau khi cooldown khi ước xong)
-      const seconds = Number(remain) + this.TIME_COOLDOWN_UOC; // 0-5p + 10p
+      const seconds = Number(remain) + this.TIME_COOLDOWN_UOC_DEV; // 0-5p + 10p
       const text = seconds >= 60 ? `${Math.ceil(seconds / 60)} phút` : `${seconds} giây`;
       client.emit('uocRongThanResult', {
         duocGoiRong: false,
@@ -752,6 +752,7 @@ export class WsGateway {
     }
 
     // OK - emit rồng biến mất cho toàn map
+    console.log("DETECT: User bấm chọn điều ước/tự hết hạn ở client")
     client.emit('uocXongResult', { success: true });
 
     // Logic này là tối 1 map (hiện tại behavior cần implements là tất cả các map đều tối - như trong phim dragon ball)
