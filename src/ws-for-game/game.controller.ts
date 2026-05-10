@@ -27,4 +27,11 @@ export class GameConsumer {
   ) {
     await this.wsGateway.handleNapTien(data.event);
   }
+
+  @EventPattern('game.reload_shop')
+  async handleReloadShop(
+    @Payload() data: { npcId: number },
+  ) {
+    await this.wsGateway.handleReloadShop(data.npcId);
+  }
 }

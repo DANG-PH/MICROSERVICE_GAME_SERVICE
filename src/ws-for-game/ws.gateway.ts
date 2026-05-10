@@ -1405,6 +1405,14 @@ export class WsGateway {
       });
     }
   }
+
+  async handleReloadShop(npcId: number) {
+    // Tạm chời chưa cover được case client chủ động ngắt kết nối ws tạm thời
+    // Có thể fix bằng cách khi client ngắt kết nối ws -> xóa cache ở client luôn -> lần sau client call api là có data mới
+    this.server.to(`NotificationGame`).emit('reloadShop', {
+      npcId: npcId
+    });
+  }
 }
 
 function censorMessage(message: string): string {
