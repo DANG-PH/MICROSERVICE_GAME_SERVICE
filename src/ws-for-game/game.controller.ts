@@ -34,4 +34,11 @@ export class GameConsumer {
   ) {
     await this.wsGateway.handleReloadShop(data.npcId);
   }
+
+  @EventPattern('game.notification')
+  async handleNotification(
+    @Payload() data: { tinNhan: string },
+  ) {
+    await this.wsGateway.handleNotificationAllUser(data.tinNhan);
+  }
 }
