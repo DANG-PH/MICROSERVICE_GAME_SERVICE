@@ -49,6 +49,16 @@ export class WsGateway {
 
   async handleConnection(client: Socket) {
     try {
+      // Check xem có bảo trì k
+      const maintenanceInfo = await this.redis.get('maintenance:active');
+      if (maintenanceInfo) {
+        // client.emit('force_logout', {
+        //   message: 'Server đang bảo trì, vui lòng quay lại sau',
+        // });
+        client.disconnect();
+        return;
+      }
+
       const token = 
               client.handshake.auth?.token ||
               client.handshake.query?.token ||
@@ -1343,6 +1353,26 @@ export class WsGateway {
     await new Promise(resolve => setTimeout(resolve, 100));
     // Disconnect socket qua adapter (Socket.IO hỗ trợ sẵn)
     this.server.in(`Game:${userId}`).disconnectSockets(true);
+  }
+
+  async kickAllSockets() {
+    // [1/2] Báo client biết để tự cleanup UI (show modal, save state, redirect...)
+    // Client sẽ tự gọi socket.disconnect() trong handler của event này.
+    // → Đây là happy path cho UX, nhưng KHÔNG được tin tưởng:
+    //   - Client có thể bị mod/tamper
+    //   - Event có thể không tới (mạng yếu, tab inactive)
+    //   - Logic client có thể bị bug
+    this.server.to('NotificationGame').emit('force_logout', {
+      message: 'Server đang bảo trì',
+    });
+    
+    // Đợi 100ms cho client kịp nhận event + cleanup UI trước khi bị cắt phũ
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // [2/2] Server force disconnect — chốt chặn không thể bypass
+    // Đảm bảo socket thực sự bị cắt dù client có làm gì hay không.
+    // Defense in depth: client tự ngắt là UX, server cắt là security.
+    this.server.in('NotificationGame').disconnectSockets(true);
   }
 
   private async syncSkillsToClient(client: Socket, map: string) {

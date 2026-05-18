@@ -41,4 +41,11 @@ export class GameConsumer {
   ) {
     await this.wsGateway.handleNotificationAllUser(data.tinNhan);
   }
+
+  @EventPattern('game.logout_all')
+  async handleLogoutAll(
+    @Payload() data: {},
+  ) {
+    await this.wsGateway.kickAllSockets();
+  }
 }
