@@ -52,9 +52,9 @@ export class WsGateway {
       // Check xem có bảo trì k
       const maintenanceInfo = await this.redis.get('maintenance:active');
       if (maintenanceInfo) {
-        // client.emit('force_logout', {
-        //   message: 'Server đang bảo trì, vui lòng quay lại sau',
-        // });
+        client.emit('force_logout', {
+          message: 'Server đang bảo trì, vui lòng quay lại sau',
+        });
         client.disconnect();
         return;
       }
